@@ -8,14 +8,14 @@
 pjsip_endpoint *endpt;
 pj_caching_pool cache_pool;
 pj_str_t registrar_uri;
-char *userId = "10009";
-char *sDomain = "192.168.1.202";
+char *userId = "10016";
+char *sDomain = "192.168.1.113";
 char *userPwd = "123456";
 
 /************************************************************************/
 /* Registrar for testing */
 static pj_bool_t regs_rx_request(pjsip_rx_data *rdata);
-
+static pj_bool_t send_tx_request(pjsip_tx_data *tx_data);
 struct pjsip_module regc_mod = {
         NULL, NULL,                /* prev, next.		*/
         {"registrar", 9},            /* Name.			*/
@@ -31,6 +31,28 @@ struct pjsip_module regc_mod = {
         NULL,                    /* on_tx_response()		*/
         NULL,                    /* on_tsx_state()		*/
 };
+
+struct pjsip_module send_mod = {
+        NULL, NULL,                /* prev, next.		*/
+        {"send_mod", 9},            /* Name.			*/
+        -1,                    /* Id			*/
+        PJSIP_MOD_PRIORITY_TRANSPORT_LAYER - 2,        /* Priority			*/
+        NULL,                    /* load()			*/
+        NULL,                    /* start()			*/
+        NULL,                    /* stop()			*/
+        NULL,                    /* unload()			*/
+        NULL,            /* on_rx_request()		*/
+        NULL,                    /* on_rx_response()		*/
+        &send_tx_request,                    /* on_tx_request.		*/
+        NULL,                    /* on_tx_response()		*/
+        NULL,                    /* on_tsx_state()		*/
+};
+static pj_bool_t send_tx_request(pjsip_tx_data *tx_data) {
+    LOGI("send_mod send_tx_request\n");
+
+//    displayBody(tx_data);
+    return PJ_TRUE;
+}
 
 static pj_bool_t regs_rx_request(pjsip_rx_data *rdata) {
     LOGI("regs_rx_request...........................\n");
@@ -124,10 +146,15 @@ int init_pjsip() {
         LOGI("registe module failure:%d\n", rc);
         goto on_return;
     }
-
+    /* Register registrar module */
+    rc = pjsip_endpt_register_module(endpt, &send_mod);
+    if (rc != PJ_SUCCESS) {
+        LOGI("registe send_mod module failure:%d\n", rc);
+        goto on_return;
+    }
 
     pj_ansi_snprintf(registrar_uri_buf, sizeof(registrar_uri_buf),
-                     "sip:192.168.1.202:%d", (int) port);
+                     "sip:192.168.1.113:%d", (int) port);
     registrar_uri = pj_str(registrar_uri_buf);
     return rc;
 
@@ -139,6 +166,7 @@ int init_pjsip() {
 
 int regc() {
     pjsip_regc *regc;
+    pjsip_auth_clt_pref auth_pref;
     char ct[100];
     char cor[32];
     LOGI("regc()\n");
@@ -158,7 +186,7 @@ int regc() {
     LOGI("ct = %s\n", ct);
     contact[0] = pj_str(ct);
 
-    registrar_uri = pj_str("sip:192.168.1.202");
+    registrar_uri = pj_str("sip:192.168.1.113");
     status = pjsip_regc_init(regc, &registrar_uri, &aor, &aor, 1, contact, 600);
     if (status != PJ_SUCCESS) {
         LOGI("pjsip_regc_init failure");
@@ -181,6 +209,17 @@ int regc() {
         return status;
     }
 
+//    pj_bzero(&auth_pref, sizeof(pjsip_auth_clt_pref));
+//    auth_pref.initial_auth = PJ_TRUE;
+//    auth_pref.algorithm = pj_str("MD5");
+//    status = pjsip_regc_set_prefs(regc, &auth_pref);
+
+    if (status != PJ_SUCCESS) {
+        LOGI("pjsip_regc_set_prefs failure!!\n");
+        pjsip_regc_destroy(regc);
+        return status;
+    }
+
     /* Register */
     status = pjsip_regc_register(regc, PJ_TRUE, &tdata);
     if (status != PJ_SUCCESS) {
@@ -188,12 +227,34 @@ int regc() {
         return status;
     }
 
+
+    //displayBody(tdata);
     status = pjsip_regc_send(regc, tdata);
     if (status != PJ_SUCCESS) {
         LOGI("pjsip_regc_send failure! status = %d\n", status);
     }
     LOGI("end regc!\n");
 }
+
+void displayBody(pjsip_tx_data *tdata) {
+    int size = sizeof(char) * 2048;
+    char *buffer = (char *) malloc(size);
+    if (buffer == NULL) {
+        LOGI("buffer == NULL");
+        return;
+    }
+    LOGI("buffer size = %d\n", size);
+    if(tdata->msg != NULL) {
+        LOGI("tdata->msg != NULL\n");
+        LOGI("tdata buffer = %s\n", tdata->buf.start);
+        if(tdata->msg->body != NULL) {
+            LOGI("msg body size = %d\n", tdata->msg->body->len);
+            tdata->msg->body->print_body(tdata->msg->body, buffer, size);
+            LOGI("tdata buffer = %s\n", buffer);
+        }
+    }
+}
+
 
 /* Log callback */
 static void log_writer(int level, const char *buffer, int len) {
@@ -204,7 +265,7 @@ int setlog() {
     /* Redirect log function to ours */
     pj_log_set_log_func(&log_writer);
     /* Set log level */
-    pj_log_set_level(4);
+    pj_log_set_level(7);
 }
 
 void test() {
