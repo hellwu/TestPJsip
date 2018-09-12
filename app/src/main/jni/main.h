@@ -34,6 +34,11 @@ int regc();
 int setlog();
 
 /**
+ *  显示发送的数据
+ * @param tdata
+ */
+void displayBody(pjsip_tx_data *tdata);
+/**
  * 测试
  */
 void test();
